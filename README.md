@@ -124,7 +124,17 @@ demo/seed.ts     prints the seeded floor (npm run seed)
 npm run build     # tsc, strict
 npm test          # vitest: policy, invariants, undo-reverses-commit
 npm run seed      # print the seed scene as JSON
+npm run demo      # narrated read -> propose -> commit -> undo -> blocked -> reject walkthrough
 ```
+
+`npm run demo` is the fastest way to see the trust boundary work without any MCP
+client. To drive it as an actual agent, either add the built `dist/server.js` to
+an MCP client that supports local stdio servers (e.g. Claude Code, via
+`claude mcp add agentic-authoring -- node ./dist/server.js`, or the project-scoped
+`.mcp.json` included here), or use the Claude Desktop config snippet above. Note
+that Claude Desktop's "custom connector" dialog currently accepts remote (HTTPS)
+servers only, so a purely local stdio server is added via config/CLI rather than
+that dialog — exposing it over a remote transport is listed under "next steps".
 
 Unit tests cover the parts that carry the trust guarantees: `policy.evaluate`
 verdicts, invariant blocking, two-phase commit semantics (propose doesn't
