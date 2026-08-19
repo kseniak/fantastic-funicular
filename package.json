@@ -1,0 +1,30 @@
+{
+  "name": "agentic-authoring-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A prototype of the read->act trust boundary for agent-driven authoring: propose, policy, commit, rollback.",
+  "type": "module",
+  "bin": {
+    "agentic-authoring-mcp": "dist/server.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "seed": "tsx demo/seed.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}
