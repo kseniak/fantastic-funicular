@@ -62,7 +62,12 @@ export type OpKind = Op["kind"];
 export type CommittedOp =
   | { readonly kind: "add_wall"; readonly wall: Wall }
   | { readonly kind: "move_room"; readonly roomId: string; readonly dx: number; readonly dy: number }
-  | { readonly kind: "delete_element"; readonly element: Element };
+  | {
+      readonly kind: "delete_element";
+      readonly element: Element;
+      /** Original index within its collection, so undo reinserts in place. */
+      readonly index: number;
+    };
 
 /** The policy verdict attached to every proposal as advisory metadata. */
 export type PolicyDecisionKind = "auto-approvable" | "needs-approval" | "blocked";
