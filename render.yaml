@@ -1,0 +1,14 @@
+# Render.com blueprint: one-click deploy of the remote MCP server.
+# In the Render dashboard: New -> Blueprint -> point at this repo. Render builds,
+# serves it over HTTPS, and injects PORT (the server reads process.env.PORT).
+services:
+  - type: web
+    name: agentic-authoring-mcp
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:http
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
