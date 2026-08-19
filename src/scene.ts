@@ -48,13 +48,19 @@ export function applyOp(scene: Scene, op: Op): { scene: Scene; record: Committed
       return { scene: next, record: { kind: "move_room", roomId: op.roomId, dx: op.dx, dy: op.dy } };
     }
     case "delete_element": {
-      const element = findElement(scene, op.elementId);
-      if (!element) throw new Error(`delete_element: element '${op.elementId}' not found`);
-      const next: Scene = {
-        walls: scene.walls.filter((w) => w.id !== op.elementId),
-        rooms: scene.rooms.filter((r) => r.id !== op.elementId),
-      };
-      return { scene: next, record: { kind: "delete_element", element } };
+      const wallIndex = scene.walls.findIndex((w) => w.id === op.elementId);
+      const roomIndex = scene.rooms.findIndex((r) => r.id === op.elementId);
+      if (wallIndex >= 0) {
+        const element = scene.walls[wallIndex]!;
+        const next: Scene = { walls: scene.walls.filter((w) => w.id !== op.elementId), rooms: scene.rooms };
+        return { scene: next, record: { kind: "delete_element", element, index: wallIndex } };
+      }
+      if (roomIndex >= 0) {
+        const element = scene.rooms[roomIndex]!;
+        const next: Scene = { walls: scene.walls, rooms: scene.rooms.filter((r) => r.id !== op.elementId) };
+        return { scene: next, record: { kind: "delete_element", element, index: roomIndex } };
+      }
+      throw new Error(`delete_element: element '${op.elementId}' not found`);
     }
   }
 }
@@ -76,12 +82,16 @@ export function reverseOp(scene: Scene, record: CommittedOp): Scene {
       return { walls: scene.walls, rooms: scene.rooms.map((r) => (r.id === room.id ? moved : r)) };
     }
     case "delete_element": {
-      // Undo a delete by restoring the captured element snapshot.
+      // Undo a delete by restoring the captured snapshot at its original index.
       const el = record.element;
       if (el.kind === "wall") {
-        return { walls: [...scene.walls, el], rooms: scene.rooms };
+        const walls = [...scene.walls];
+        walls.splice(record.index, 0, el);
+        return { walls, rooms: scene.rooms };
       }
-      return { walls: scene.walls, rooms: [...scene.rooms, el] };
+      const rooms = [...scene.rooms];
+      rooms.splice(record.index, 0, el);
+      return { walls: scene.walls, rooms };
     }
   }
 }
