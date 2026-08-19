@@ -56,6 +56,29 @@ database. It seeds a floor (an outer boundary of 4 structural walls plus a
 `living_room` and a `bedroom`) on every start, so there is something to act on
 immediately.
 
+## Run it as a remote server (HTTPS URL for the connector dialog)
+
+Claude Desktop's "custom connector" dialog accepts a **remote HTTPS URL**, not a
+local command. The same server also runs over the MCP **Streamable HTTP**
+transport for exactly this case:
+
+```bash
+npm run build
+npm run start:http     # serves MCP at http://localhost:3000/mcp (PORT overridable)
+```
+
+Deploy it to any Node host to get a public URL:
+
+- **Render (one click):** the repo includes `render.yaml`. In Render, *New →
+  Blueprint → pick this repo*; it builds, serves over HTTPS, and injects `PORT`.
+  Your endpoint is `https://<your-service>.onrender.com/mcp`.
+- **Docker (any host):** `docker build -t agentic-authoring . && docker run -p 3000:3000 agentic-authoring`.
+
+Then in Claude → *Settings → Connectors → Add → Add custom connector*, paste the
+`…/mcp` URL. Each MCP session gets its own freshly seeded floor; session state is
+in-memory and ephemeral (persistence and auth are the "next steps" below). The
+server is unauthenticated, so treat a public deployment as a shared demo sandbox.
+
 ## Demo script (paste to your agent)
 
 1. *"Show me the scene, then add a partition wall splitting the living room."*
@@ -134,7 +157,7 @@ an MCP client that supports local stdio servers (e.g. Claude Code, via
 `.mcp.json` included here), or use the Claude Desktop config snippet above. Note
 that Claude Desktop's "custom connector" dialog currently accepts remote (HTTPS)
 servers only, so a purely local stdio server is added via config/CLI rather than
-that dialog — exposing it over a remote transport is listed under "next steps".
+that dialog — see "Run it as a remote server" above for the HTTPS option.
 
 Unit tests cover the parts that carry the trust guarantees: `policy.evaluate`
 verdicts, invariant blocking, two-phase commit semantics (propose doesn't
@@ -146,10 +169,10 @@ kind of commit.
 - **Persistence + optimistic concurrency.** Back the scene and op log with a
   store, and version proposals against the scene revision they were built on so a
   stale proposal fails on commit instead of applying to a changed world.
-- **Server-side, per-tenant policy enforcement + OAuth-scoped tools.** Make
-  `blocked`/`needs-approval` enforceable server-side (configurable per tenant),
-  and gate act vs. commit tools behind per-tool OAuth scopes so "can propose" and
-  "can commit" are separate grants.
+- **Auth + per-tenant policy enforcement.** The remote (HTTP) server ships
+  unauthenticated as a demo; production needs OAuth on the transport and per-tool
+  scopes so "can propose" and "can commit" are separate grants, plus making
+  `blocked`/`needs-approval` enforceable server-side and configurable per tenant.
 - **Prompt-injection hardening on tool inputs.** Treat all agent-supplied ids and
   coordinates as untrusted: strict schema validation (already via zod), plus
   bounds/normalization and rejection of anything that would smuggle intent past
