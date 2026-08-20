@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Compliance-aware massing</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+        font-size: 13px;
+      }
+      body {
+        margin: 0;
+        padding: 12px;
+      }
+      h3 {
+        margin: 0 0 8px;
+      }
+      button {
+        display: block;
+        width: 100%;
+        margin: 6px 0;
+        padding: 8px;
+        border: 1px solid #8884;
+        border-radius: 6px;
+        background: #0000000a;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #00000014;
+      }
+      #status {
+        margin-top: 12px;
+        line-height: 1.4;
+      }
+      #status ul {
+        padding-left: 18px;
+        margin: 4px 0;
+      }
+      .ok {
+        color: #1a7f37;
+      }
+      .err {
+        color: #b91c1c;
+      }
+      .policy {
+        color: #9a6700;
+      }
+      code {
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <h3>Compliance-aware massing</h3>
+    <button id="read"></button>
+    <button id="propose"></button>
+    <button id="commit"></button>
+    <button id="undo"></button>
+    <div id="status"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
