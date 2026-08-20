@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm --prefix ../mcp run build && tsc && vite build",
+    "build": "npm --prefix ../mcp install && npm --prefix ../mcp run build && tsc && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
