@@ -1,0 +1,23 @@
+{
+  "parcelId": "mock-parcel-001",
+  "planeZ": 0,
+  "boundaryPolygon": [[0, 0], [40, 0], [40, 30], [0, 30]],
+  "buildings": [
+    {
+      "id": "tower",
+      "footprint": [[2, 3], [30, 3], [30, 27], [2, 27]],
+      "baseZ": 0,
+      "height": 30,
+      "floors": 10,
+      "function": "residential"
+    },
+    {
+      "id": "annex",
+      "footprint": [[33, 10], [37, 10], [37, 20], [33, 20]],
+      "baseZ": 0,
+      "height": 12,
+      "floors": 3,
+      "function": "retail"
+    }
+  ]
+}

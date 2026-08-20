@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "agentic-authoring": {
+      "command": "node",
+      "args": ["dist/server.js"]
+    }
+  }
+}

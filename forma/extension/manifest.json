@@ -1,0 +1,15 @@
+{
+  "$comment": "Template for the Forma extension manifest. You paste these fields into the Forma developer console when you register the extension (see the extension README). The one field you must set is the iframe URL — point it at the local dev server (npm run dev, http://localhost:5173) while developing, or your hosted build URL in production.",
+  "schemaVersion": 1,
+  "id": "REPLACE_WITH_YOUR_EXTENSION_ID",
+  "name": "Compliance-aware massing",
+  "description": "Reads the current massing, checks it against the parcel's zoning envelope, and draws a compliant correction back into the canvas.",
+  "tabs": [
+    {
+      "id": "compliance-massing",
+      "name": "Compliance",
+      "iframeUrl": "http://localhost:5173",
+      "type": "floatingPanel"
+    }
+  ]
+}

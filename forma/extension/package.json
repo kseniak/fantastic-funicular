@@ -1,0 +1,20 @@
+{
+  "name": "forma-compliance-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Forma embedded-view extension: reads the current massing, runs the compliance loop, and writes the corrected geometry back into the Forma canvas.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm --prefix ../mcp install && npm --prefix ../mcp run build && tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "forma-compliance-mcp": "file:../mcp",
+    "forma-embedded-view-sdk": "^0.93.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}

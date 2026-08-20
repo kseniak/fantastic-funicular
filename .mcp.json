@@ -1,8 +1,12 @@
 {
   "mcpServers": {
+    "forma-compliance": {
+      "command": "node",
+      "args": ["forma/mcp/dist/server.js"]
+    },
     "agentic-authoring": {
       "command": "node",
-      "args": ["dist/server.js"]
+      "args": ["authoring-mcp/dist/server.js"]
     }
   }
 }
