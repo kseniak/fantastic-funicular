@@ -2,6 +2,20 @@
 
 An agent that reads a Forma massing, checks it against real zoning constraints, and reshapes the buildings to comply — behind a propose/confirm/rollback boundary.
 
+## Demo
+
+<!--
+  To embed the recording: open a new GitHub issue (or this repo's PR), drag the
+  video file (.mp4/.mov, <=100 MB) into the comment box, wait for it to upload,
+  and copy the resulting https://github.com/user-attachments/assets/... URL.
+  Paste it on its own line below (replace the placeholder). GitHub renders it as
+  an inline player. No need to submit the issue — the upload is all you need.
+-->
+
+https://github.com/user-attachments/assets/REPLACE-WITH-UPLOADED-VIDEO-URL
+
+*Running live in a Forma Site Design project: read the massing → check it against the parcel's limits → commit the corrected, compliant building back into the canvas.*
+
 ## The gap this fills
 
 Zoning **data** is a solved problem: Regrid, Zoneomics and LightBox all sell parcel setbacks, FAR, height limits, coverage and allowed uses through an API. And a competitor (TestFit) already *shows* the zoning envelope as a map overlay. What nobody does is close the loop — take "your massing pokes through the zoning envelope" and have an agent actually **reshape the massing to comply**, then write that geometry back into the design tool.
