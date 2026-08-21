@@ -127,7 +127,7 @@ async function readParcelBoundary(): Promise<[number, number][]> {
  *  and vegetation are always excluded. */
 async function collectMassingPaths(boundary: [number, number][]): Promise<string[]> {
   const found = new Set<string>();
-  for (const category of ["building", "buildings"]) {
+  for (const category of ["building", "buildings", "house", "houses"]) {
     for (const path of await Forma.geometry.getPathsByCategory({ category })) found.add(path);
   }
   if (found.size === 0) {
@@ -192,7 +192,7 @@ function buildingsFrom(items: { path: string; meshes: Float32Array[] }[]): Build
  *  terrain, the site limit, roads and vegetation. */
 async function meshPathsInside(boundary: [number, number][]): Promise<string[]> {
   const found = new Set<string>();
-  for (const category of ["floor", "floors", "volume", "volumes", "massing", "building", "buildings"]) {
+  for (const category of ["floor", "floors", "volume", "volumes", "massing", "building", "buildings", "house", "houses"]) {
     for (const path of await Forma.geometry.getPathsByCategory({ category })) found.add(path);
   }
   if (found.size === 0) {

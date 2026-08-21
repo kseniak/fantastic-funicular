@@ -12,7 +12,10 @@ export class MockZoningProvider implements ZoningProvider {
 
   constructor(seed?: { readonly parcels?: Record<string, ZoningEnvelope>; readonly fallback?: ZoningEnvelope }) {
     this.byParcel = new Map(Object.entries(seed?.parcels ?? DEFAULT_PARCELS));
-    this.fallback = seed?.fallback ?? DEFAULT_ENVELOPE;
+    // For a real parcel we have no data for (e.g. a live Forma project outside
+    // the US/Canada, where no zoning API applies), fall back to a typical
+    // residential-zone envelope so the check is meaningful rather than blank.
+    this.fallback = seed?.fallback ?? RESIDENTIAL_DEFAULT;
   }
 
   async getEnvelope(ref: ParcelRef): Promise<ZoningEnvelope> {
@@ -33,6 +36,22 @@ export const DEFAULT_ENVELOPE: ZoningEnvelope = {
   maxFAR: 2.5,
   maxLotCoverage: 0.5,
   allowedUses: ["residential", "retail", "office", "mixed_use"],
+};
+
+/**
+ * A tighter residential envelope, roughly a typical Norwegian/Oslo småhus zone
+ * (max height ~9 m, ~24% footprint coverage, 4 m to the neighbour boundary).
+ * Used as the fallback for real parcels with no zoning-API coverage, so the loop
+ * shows real violations for a live building instead of nothing.
+ */
+export const RESIDENTIAL_DEFAULT: ZoningEnvelope = {
+  maxHeight: 9,
+  frontSetback: 4,
+  sideSetback: 4,
+  rearSetback: 4,
+  maxFAR: 0.8,
+  maxLotCoverage: 0.24,
+  allowedUses: ["residential", "bolig"],
 };
 
 /** Keyed to the mock scene's parcelId so the offline demo lines up end to end. */

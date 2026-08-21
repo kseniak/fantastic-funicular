@@ -48,7 +48,7 @@ function setZoningStatus(result: { live: boolean; source: string }): void {
   const badge = document.getElementById("zoning-status") as HTMLDivElement;
   const text = document.getElementById("zoning-status-text") as HTMLSpanElement;
   badge.classList.toggle("live", result.live);
-  text.textContent = result.live ? `live zoning · ${result.source}` : "mock zoning · no backend configured";
+  text.textContent = result.live ? `live zoning · ${result.source}` : `seeded limits · ${result.source}`;
 }
 
 function violationList(violations: readonly Violation[]): string {
