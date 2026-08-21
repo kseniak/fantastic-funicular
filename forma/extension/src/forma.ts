@@ -35,6 +35,57 @@ export async function readSiteFromForma(): Promise<Site> {
   return { parcelId: Forma.getProjectId(), planeZ: 0, boundaryPolygon, buildings };
 }
 
+interface ElementLike {
+  properties?: { category?: string };
+  representations?: { footprint?: unknown; volumeMesh?: unknown };
+}
+
+/** Diagnostic dump of what the current Forma scene actually contains, so the
+ *  read logic can be matched to real category names and representations. */
+export async function describeScene(): Promise<unknown> {
+  const report: Record<string, unknown> = { projectId: Forma.getProjectId() };
+  try {
+    report.geoLocation = await Forma.project.getGeoLocation();
+  } catch (e) {
+    report.geoLocationError = String(e);
+  }
+
+  const candidates = [
+    "building", "buildings", "site_limit", "property_boundary", "terrain", "vegetation",
+    "roads", "road", "volume", "volumes", "massing", "constraint", "generic", "floor",
+    "floors", "zone", "context", "urban",
+  ];
+  const catCounts: Record<string, number> = {};
+  for (const c of candidates) {
+    try {
+      const paths = await Forma.geometry.getPathsByCategory({ category: c });
+      if (paths.length) catCounts[c] = paths.length;
+    } catch {
+      catCounts[c] = -1;
+    }
+  }
+  report.pathsByCategory = catCounts;
+
+  try {
+    const rootUrn = await Forma.proposal.getRootUrn();
+    const { elements } = await Forma.elements.get({ urn: rootUrn, recursive: true });
+    const byCategory: Record<string, { count: number; withFootprint: number; withVolume: number }> = {};
+    for (const el of Object.values(elements) as ElementLike[]) {
+      const cat = el.properties?.category ?? "(none)";
+      const s = byCategory[cat] ?? { count: 0, withFootprint: 0, withVolume: 0 };
+      s.count++;
+      if (el.representations?.footprint) s.withFootprint++;
+      if (el.representations?.volumeMesh) s.withVolume++;
+      byCategory[cat] = s;
+    }
+    report.elementTree = { total: Object.keys(elements).length, byCategory };
+  } catch (e) {
+    report.elementTreeError = String(e);
+  }
+
+  return report;
+}
+
 async function firstFootprint(category: string): Promise<[number, number][] | undefined> {
   const paths = await Forma.geometry.getPathsByCategory({ category });
   for (const path of paths) {
