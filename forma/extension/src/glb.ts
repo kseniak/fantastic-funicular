@@ -16,7 +16,11 @@ const ARRAY_BUFFER = 34962;
 const TRIANGLES = 4;
 
 export function positionsToGlb(positions: Float32Array, zUp = true): ArrayBuffer {
-  const verts = zUp ? positions : toYUp(positions);
+  // Double-side the mesh: without per-vertex normals a viewer culls back faces,
+  // and an inward-wound solid then renders as nothing. Emitting each triangle in
+  // both windings makes it visible regardless of orientation.
+  const doubled = doubleSide(zUp ? positions : toYUp(positions));
+  const verts = doubled;
   const count = Math.floor(verts.length / 3);
 
   const min = [Infinity, Infinity, Infinity];
@@ -68,6 +72,22 @@ export function positionsToGlb(positions: Float32Array, zUp = true): ArrayBuffer
   bytes.set(binBytes, o); // remaining pad bytes are already zero
 
   return buf;
+}
+
+/** Append a reverse-wound copy of every triangle so the mesh renders from both sides. */
+function doubleSide(p: Float32Array): Float32Array {
+  const tris = Math.floor(p.length / 9);
+  const out = new Float32Array(tris * 18);
+  out.set(p.subarray(0, tris * 9), 0);
+  for (let t = 0; t < tris; t++) {
+    const src = t * 9;
+    const dst = tris * 9 + t * 9;
+    // v0, then v2, v1 (reversed winding)
+    out[dst] = p[src]; out[dst + 1] = p[src + 1]; out[dst + 2] = p[src + 2];
+    out[dst + 3] = p[src + 6]; out[dst + 4] = p[src + 7]; out[dst + 5] = p[src + 8];
+    out[dst + 6] = p[src + 3]; out[dst + 7] = p[src + 4]; out[dst + 8] = p[src + 5];
+  }
+  return out;
 }
 
 function toYUp(positions: Float32Array): Float32Array {
