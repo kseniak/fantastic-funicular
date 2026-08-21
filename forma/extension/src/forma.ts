@@ -84,6 +84,19 @@ export async function describeScene(): Promise<unknown> {
     report.elementTreeError = String(e);
   }
 
+  // How many triangle vertices getTriangles returns for the first path of each
+  // category — tells us whether massing meshes are reachable and via which path.
+  try {
+    const probe: Record<string, number> = {};
+    for (const category of ["building", "floor", "terrain", "site_limit"]) {
+      const paths = await Forma.geometry.getPathsByCategory({ category });
+      if (paths[0]) probe[category] = (await Forma.geometry.getTriangles({ path: paths[0] })).length;
+    }
+    report.triangleProbe = probe;
+  } catch (e) {
+    report.triangleProbeError = String(e);
+  }
+
   return report;
 }
 
@@ -125,17 +138,41 @@ async function collectMassingPaths(boundary: [number, number][]): Promise<string
 }
 
 async function readBuildings(boundary: [number, number][]): Promise<Building[]> {
-  const paths = await collectMassingPaths(boundary);
-  const buildings: Building[] = [];
-  for (const path of paths) {
-    // Massing here has no footprint representation — geometry lives in child
-    // volume meshes — so derive both footprint and height from the triangles.
+  const containers = await collectMassingPaths(boundary);
+
+  // First try each container as a whole building — getTriangles is meant to be
+  // recursive, so this works when the container owns its floors' meshes.
+  const withMesh: { path: string; meshes: Float32Array[] }[] = [];
+  for (const path of containers) {
     const tris = await Forma.geometry.getTriangles({ path });
-    const geo = massingFromTriangles(tris);
+    if (tris.length >= 9) withMesh.push({ path, meshes: [tris] });
+  }
+  if (withMesh.length > 0) return buildingsFrom(withMesh);
+
+  // Containers carry no direct mesh — the geometry lives in child volume
+  // elements (e.g. "floor"). Merge every mesh-bearing massing element on the
+  // site into one building. Multiple separate buildings would merge here; that
+  // is a documented limitation of the fallback.
+  const meshes: Float32Array[] = [];
+  let firstPath = "building";
+  for (const path of await meshPathsInside(boundary)) {
+    const tris = await Forma.geometry.getTriangles({ path });
+    if (tris.length >= 9) {
+      if (meshes.length === 0) firstPath = path;
+      meshes.push(tris);
+    }
+  }
+  return meshes.length ? buildingsFrom([{ path: firstPath, meshes }]) : [];
+}
+
+function buildingsFrom(items: { path: string; meshes: Float32Array[] }[]): Building[] {
+  const out: Building[] = [];
+  for (const { path, meshes } of items) {
+    const geo = massingFromMeshes(meshes);
     if (!geo) continue;
     const id = shortId(path);
     buildingPaths.set(id, path);
-    buildings.push({
+    out.push({
       id,
       footprint: geo.footprint,
       baseZ: geo.baseZ,
@@ -144,27 +181,46 @@ async function readBuildings(boundary: [number, number][]): Promise<Building[]> 
       function: "residential",
     });
   }
-  return buildings;
+  return out;
 }
 
-/** Reduce a triangle soup to a footprint (convex hull of the xy projection) and a
+/** Mesh-bearing massing on the site: the volume elements (floors etc.), excluding
+ *  terrain, the site limit, roads and vegetation. */
+async function meshPathsInside(boundary: [number, number][]): Promise<string[]> {
+  const found = new Set<string>();
+  for (const category of ["floor", "floors", "volume", "volumes", "massing", "building", "buildings"]) {
+    for (const path of await Forma.geometry.getPathsByCategory({ category })) found.add(path);
+  }
+  if (found.size === 0) {
+    for (const path of await Forma.geometry.getPathsInsidePolygons({ polygons: [boundary] })) found.add(path);
+  }
+  const excluded = new Set<string>();
+  for (const category of ["site_limit", "property_boundary", "terrain", "vegetation", "roads"]) {
+    for (const path of await Forma.geometry.getPathsByCategory({ category })) excluded.add(path);
+  }
+  return [...found].filter((path) => !excluded.has(path));
+}
+
+/** Reduce triangle meshes to a footprint (convex hull of the xy projection) and a
  *  height (z-extent). The model is convex-only, so the hull is the right shape;
  *  a non-convex outline is a documented follow-up. */
-function massingFromTriangles(
-  tris: Float32Array,
+function massingFromMeshes(
+  meshes: readonly Float32Array[],
 ): { footprint: [number, number][]; baseZ: number; height: number } | null {
-  if (tris.length < 9) return null;
   const pts: [number, number][] = [];
   let minZ = Infinity;
   let maxZ = -Infinity;
-  for (let i = 0; i + 2 < tris.length; i += 3) {
-    pts.push([tris[i], tris[i + 1]]);
-    const z = tris[i + 2];
-    if (z < minZ) minZ = z;
-    if (z > maxZ) maxZ = z;
+  for (const tris of meshes) {
+    for (let i = 0; i + 2 < tris.length; i += 3) {
+      pts.push([tris[i], tris[i + 1]]);
+      const z = tris[i + 2];
+      if (z < minZ) minZ = z;
+      if (z > maxZ) maxZ = z;
+    }
   }
+  if (pts.length < 3 || !isFinite(minZ)) return null;
   const footprint = convexHull(pts);
-  if (footprint.length < 3 || !isFinite(minZ)) return null;
+  if (footprint.length < 3) return null;
   return { footprint, baseZ: minZ, height: Math.max(STOREY_HEIGHT, maxZ - minZ) };
 }
 
