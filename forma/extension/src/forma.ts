@@ -368,7 +368,9 @@ export function hasPersistedEdits(): boolean {
 
 async function createVolumeMeshElement(positions: Float32Array): Promise<string> {
   const authcontext = Forma.getProjectId();
-  const glb = positionsToGlb(positions);
+  // glTF is Y-up; Forma converts Y-up->Z-up on import. Emit Y-up so the building
+  // comes back upright and in place instead of rotated off into the distance.
+  const glb = positionsToGlb(positions, false);
 
   let blobId: string;
   try {
