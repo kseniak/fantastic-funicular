@@ -21,6 +21,7 @@ import { Forma } from "forma-embedded-view-sdk/auto";
 import type { Building, Site } from "forma-compliance-mcp/dist/site.js";
 import type { Edit } from "forma-compliance-mcp/dist/fixes.js";
 import { extrudeMesh } from "./mesh.js";
+import { positionsToGlb } from "./glb.js";
 
 /** Metres per storey, used to turn a read height into a floor count. */
 const STOREY_HEIGHT = 3;
@@ -29,8 +30,8 @@ const STOREY_HEIGHT = 3;
 const correctionMeshes = new Map<string, string>();
 /** buildingId -> the Forma element path it was read from. */
 const buildingPaths = new Map<string, string>();
-/** buildingId -> the original element urn at that path, so a persisted commit can be reverted. */
-const originalUrns = new Map<string, string>();
+/** buildingId -> the path of the corrected element we added, so undo can remove it. */
+const addedPaths = new Map<string, string>();
 
 export async function readSiteFromForma(): Promise<Site> {
   const boundaryPolygon = await readParcelBoundary();
@@ -301,48 +302,35 @@ export async function writeCorrections(edits: readonly Edit[]): Promise<void> {
     throw new Error("You need collaborator or admin access on this project to write changes.");
   }
   for (const edit of edits) {
-    const path = buildingPaths.get(edit.buildingId);
-    if (!path) continue;
-    if (!originalUrns.has(edit.buildingId)) {
-      const { element } = await Forma.elements.getByPath({ path });
-      originalUrns.set(edit.buildingId, element.urn);
-    }
-    const urn = await createVolumeElement(edit.after.footprint as [number, number][], edit.after.baseZ, edit.after.height);
-    await Forma.proposal.replaceElement({ path, urn });
+    const positions = extrudeMesh(edit.after.footprint as [number, number][], edit.after.baseZ, edit.after.height);
+    const urn = await createVolumeMeshElement(positions);
+    // Non-destructive for now: add the corrected building alongside the original
+    // so we can confirm the GLB renders and lands correctly before switching to
+    // replaceElement. Undo removes it.
+    const { path } = await Forma.proposal.addElement({ urn, name: `${edit.buildingId} (compliant)` });
+    addedPaths.set(edit.buildingId, path);
   }
   await Forma.proposal.awaitProposalPersisted();
 }
 
-/** Put the original buildings back — the persisted-commit counterpart to undo. */
+/** Remove the corrected elements we added — the persisted-commit counterpart to undo. */
 export async function revertCorrections(): Promise<void> {
-  for (const [id, urn] of originalUrns) {
-    const path = buildingPaths.get(id);
-    if (path) await Forma.proposal.replaceElement({ path, urn });
+  for (const path of addedPaths.values()) {
+    await Forma.proposal.removeElement({ path });
   }
-  originalUrns.clear();
+  addedPaths.clear();
   await Forma.proposal.awaitProposalPersisted();
 }
 
 export function hasPersistedEdits(): boolean {
-  return originalUrns.size > 0;
+  return addedPaths.size > 0;
 }
 
-async function createVolumeElement(footprint: [number, number][], baseZ: number, height: number): Promise<string> {
-  const ring = [...footprint.map(([x, y]) => [x, y]), [footprint[0][0], footprint[0][1]]];
-  const data = {
-    type: "FeatureCollection",
-    features: [
-      {
-        type: "Feature",
-        id: "corrected+0",
-        geometry: { type: "Polygon", coordinates: [ring] },
-        properties: { height, elevation: baseZ },
-      },
-    ],
-  };
+async function createVolumeMeshElement(positions: Float32Array): Promise<string> {
+  const { blobId } = await Forma.integrateElements.uploadFile({ data: positionsToGlb(positions) });
   const { urn } = await Forma.integrateElements.createElementV2({
     properties: { category: "building" },
-    representations: { volume25DCollection: { type: "embedded-json", data } },
+    representations: { volumeMesh: { type: "linked", blobId } },
   });
   return urn;
 }
