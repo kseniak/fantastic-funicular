@@ -319,7 +319,15 @@ export async function writeCorrections(edits: readonly Edit[]): Promise<WriteRes
       originalUrns.set(edit.buildingId, element.urn);
     }
     const b = edit.after;
-    const positions = extrudeMesh(b.footprint as [number, number][], b.baseZ, b.height);
+    // The replaced element keeps the original's world transform, and our footprint
+    // is already in world coords — so subtract that translation to author the mesh
+    // in the element's local frame, otherwise it lands offset (and looks missing).
+    const { transform } = await Forma.elements.getWorldTransform({ path });
+    const tx = transform[12] ?? 0;
+    const ty = transform[13] ?? 0;
+    const tz = transform[14] ?? 0;
+    const localFootprint = (b.footprint as [number, number][]).map(([x, y]) => [x - tx, y - ty] as [number, number]);
+    const positions = extrudeMesh(localFootprint, b.baseZ - tz, b.height);
     const urn = await createVolumeMeshElement(positions);
     // Replace the original building with the corrected one — one building at the end.
     await Forma.proposal.replaceElement({ path, urn });
