@@ -25,10 +25,12 @@ import { extrudeMesh } from "./mesh.js";
 /** Metres per storey, used to turn a read height into a floor count. */
 const STOREY_HEIGHT = 3;
 
-/** buildingId -> the render-mesh id we last drew for its correction. */
+/** buildingId -> the render-mesh id we last drew for its correction (preview fallback). */
 const correctionMeshes = new Map<string, string>();
-/** buildingId -> the Forma element path it was read from (for future Integrate writes). */
+/** buildingId -> the Forma element path it was read from. */
 const buildingPaths = new Map<string, string>();
+/** buildingId -> the original element urn at that path, so a persisted commit can be reverted. */
+const originalUrns = new Map<string, string>();
 
 export async function readSiteFromForma(): Promise<Site> {
   const boundaryPolygon = await readParcelBoundary();
@@ -284,4 +286,63 @@ function solidColor(vertexCount: number, rgba: [number, number, number, number])
   const out = new Uint8Array(vertexCount * 4);
   for (let i = 0; i < vertexCount; i++) out.set(rgba, i * 4);
   return out;
+}
+
+/**
+ * Persist the corrections into the proposal: for each edited building, build a
+ * new element from the corrected footprint + height (a volume25DCollection that
+ * Forma extrudes itself) and swap it in at the building's path with
+ * replaceElement. This actually changes the model — the original is gone and the
+ * change survives closing the panel — unlike the render-mesh preview. The
+ * original urns are kept so undo can put them back.
+ */
+export async function writeCorrections(edits: readonly Edit[]): Promise<void> {
+  if (!(await Forma.getCanEdit())) {
+    throw new Error("You need collaborator or admin access on this project to write changes.");
+  }
+  for (const edit of edits) {
+    const path = buildingPaths.get(edit.buildingId);
+    if (!path) continue;
+    if (!originalUrns.has(edit.buildingId)) {
+      const { element } = await Forma.elements.getByPath({ path });
+      originalUrns.set(edit.buildingId, element.urn);
+    }
+    const urn = await createVolumeElement(edit.after.footprint as [number, number][], edit.after.baseZ, edit.after.height);
+    await Forma.proposal.replaceElement({ path, urn });
+  }
+  await Forma.proposal.awaitProposalPersisted();
+}
+
+/** Put the original buildings back — the persisted-commit counterpart to undo. */
+export async function revertCorrections(): Promise<void> {
+  for (const [id, urn] of originalUrns) {
+    const path = buildingPaths.get(id);
+    if (path) await Forma.proposal.replaceElement({ path, urn });
+  }
+  originalUrns.clear();
+  await Forma.proposal.awaitProposalPersisted();
+}
+
+export function hasPersistedEdits(): boolean {
+  return originalUrns.size > 0;
+}
+
+async function createVolumeElement(footprint: [number, number][], baseZ: number, height: number): Promise<string> {
+  const ring = [...footprint.map(([x, y]) => [x, y]), [footprint[0][0], footprint[0][1]]];
+  const data = {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        id: "corrected+0",
+        geometry: { type: "Polygon", coordinates: [ring] },
+        properties: { height, elevation: baseZ },
+      },
+    ],
+  };
+  const { urn } = await Forma.integrateElements.createElementV2({
+    properties: { category: "building" },
+    representations: { volume25DCollection: { type: "embedded-json", data } },
+  });
+  return urn;
 }

@@ -9,7 +9,15 @@ import { checkCompliance, type Violation } from "forma-compliance-mcp/dist/compl
 import { planCompliance, type Edit } from "forma-compliance-mcp/dist/fixes.js";
 import { evaluate } from "forma-compliance-mcp/dist/policy.js";
 import type { Site, ZoningEnvelope } from "forma-compliance-mcp/dist/site.js";
-import { clearCorrections, describeScene, drawCorrections, readSiteFromForma } from "./forma.js";
+import {
+  clearCorrections,
+  describeScene,
+  drawCorrections,
+  hasPersistedEdits,
+  readSiteFromForma,
+  revertCorrections,
+  writeCorrections,
+} from "./forma.js";
 import { fetchZoning } from "./zoning.js";
 
 let site: Site | null = null;
@@ -88,14 +96,22 @@ els.propose.onclick = guard(async () => {
 
 els.commit.onclick = guard(async () => {
   if (!plan || !envelope) throw new Error("Make a proposal first.");
-  await drawCorrections(plan.edits);
+  let note: string;
+  try {
+    await writeCorrections(plan.edits);
+    note = "Corrected massing written to the model — it persists after you close the panel.";
+  } catch (e) {
+    await drawCorrections(plan.edits);
+    note = `Couldn't write to the model (${e instanceof Error ? e.message : String(e)}); showing a preview overlay instead.`;
+  }
   site = plan.resultingSite;
   const violations = checkCompliance(site, envelope);
   plan = null;
-  log(`<h4>Committed</h4><p>Corrected massing drawn into the scene.</p>${violationList(violations)}`);
+  log(`<h4>Committed</h4><p>${note}</p>${violationList(violations)}`);
 });
 
 els.undo.onclick = guard(async () => {
+  if (hasPersistedEdits()) await revertCorrections();
   await clearCorrections();
   site = await readSiteFromForma();
   const zoning = await fetchZoning(site.parcelId);
