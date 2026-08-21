@@ -349,10 +349,27 @@ export function hasPersistedEdits(): boolean {
 }
 
 async function createVolumeMeshElement(positions: Float32Array): Promise<string> {
-  const { blobId } = await Forma.integrateElements.uploadFile({ data: positionsToGlb(positions) });
-  const { urn } = await Forma.integrateElements.createElementV2({
-    properties: { category: "building" },
-    representations: { volumeMesh: { type: "linked", blobId } },
-  });
-  return urn;
+  const authcontext = Forma.getProjectId();
+  const glb = positionsToGlb(positions);
+
+  let blobId: string;
+  try {
+    ({ blobId } = await Forma.integrateElements.uploadFile({ authcontext, data: glb }));
+  } catch (e) {
+    throw new Error(`uploadFile (${glb.byteLength} bytes): ${errMsg(e)}`);
+  }
+
+  try {
+    const { urn } = await Forma.integrateElements.createElementV2({
+      properties: { category: "building" },
+      representations: { volumeMesh: { type: "linked", blobId } },
+    });
+    return urn;
+  } catch (e) {
+    throw new Error(`createElementV2: ${errMsg(e)}`);
+  }
+}
+
+function errMsg(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
 }
