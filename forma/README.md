@@ -138,9 +138,25 @@ Now **Read massing** shows the live envelope and where it came from. With no `?b
 
 Zoneomics' control field names vary by jurisdiction, so the mapping (`src/zoning/zoneomics.ts`) deep-searches the payload and falls back to the mock per field. Hit `GET <backend>/zoning?lat=..&lng=..&debug=1` to see the raw response and confirm the mapping for your area — height/setbacks are treated as feet and converted to metres, coverage is normalized to a 0–1 ratio.
 
-## Set up live mode in Forma (first-time, start to finish)
+## Try it in your own Forma (hosted — no clone, no build)
 
-This assumes you have a Forma trial or AEC Collection access and have never registered an extension before. Where a step needs an Autodesk-side action only you can do, it says so with the link.
+The extension is already built and hosted on GitHub Pages, so you don't need to clone or run anything to try it live — just point your own Forma at the hosted URL:
+
+```
+https://kseniak.github.io/fantastic-funicular/
+```
+
+1. Create a free **APS app** at https://aps.autodesk.com/ (Single-Page/public client) and copy its **Client ID**.
+2. In your Forma project → **Extensions** → add a **developer extension**, with `id` = your Client ID and the iframe URL set to the hosted URL above.
+3. Open the **Compliance** panel and run **Read massing → Check & make compliant → Commit → Undo** against your own building.
+
+It runs entirely in your browser against your own project — nothing is sent anywhere. Zoning uses seeded residential limits unless you append `?backend=<your-zoneomics-backend>` (US/Canada only).
+
+The one prerequisite that's Autodesk's to grant, not mine: your account needs **Forma developer access** to side-load a developer extension at all (see step 2 below). Without it, use the offline demo (`npm test` / `npm run demo`) and the video above.
+
+## Set up live mode in Forma from source (first-time, start to finish)
+
+Use this if you want to develop the extension locally instead of running the hosted build. It assumes you have a Forma trial or AEC Collection access and have never registered an extension before. Where a step needs an Autodesk-side action only you can do, it says so with the link.
 
 1. **Create an APS (Autodesk Platform Services) app.** Go to https://aps.autodesk.com/ , sign in with the same Autodesk ID as your Forma access, and create an app (**Create App**). You'll get a **Client ID** — that's your extension's identity. You don't need a client secret for a browser extension; it uses the authcontext Forma provides in the iframe.
 2. **Turn on the Forma API for the app.** In the APS app settings, add/enable the **Forma** API product. If your account can't see Forma as an available API, that's an allow-list gated by Autodesk — request access from the Forma developer program: https://aps.autodesk.com/en/docs/forma/v1/overview/ (developer forum: https://forums.autodesk.com/t5/forma-developer-forum/bd-p/forma_api_forum). **This is the one step I can't do for you** — the app has to be allow-listed for Forma before the extension will load.
