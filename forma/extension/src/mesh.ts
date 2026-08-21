@@ -39,3 +39,24 @@ export function extrudeMesh(footprint: readonly XY[], baseZ: number, height: num
 
   return new Float32Array(out);
 }
+
+/**
+ * The corrected massing as a stack of `floors` slabs so it keeps the floor look
+ * rather than reading as one solid block. Each slab is the footprint extruded to
+ * just under the storey height, leaving a thin gap that reads as a floor line.
+ */
+export function extrudeFloors(
+  footprint: readonly XY[],
+  baseZ: number,
+  storeyHeight: number,
+  floors: number,
+  gap = 0.4,
+): Float32Array {
+  const slabHeight = Math.max(0.1, storeyHeight - gap);
+  const out: number[] = [];
+  for (let i = 0; i < floors; i++) {
+    const slab = extrudeMesh(footprint, baseZ + i * storeyHeight, slabHeight);
+    for (let k = 0; k < slab.length; k++) out.push(slab[k]);
+  }
+  return new Float32Array(out);
+}
