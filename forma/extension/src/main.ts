@@ -35,6 +35,13 @@ function log(html: string): void {
   els.status.innerHTML = html;
 }
 
+function setZoningStatus(result: { live: boolean; source: string }): void {
+  const badge = document.getElementById("zoning-status") as HTMLDivElement;
+  const text = document.getElementById("zoning-status-text") as HTMLSpanElement;
+  badge.classList.toggle("live", result.live);
+  text.textContent = result.live ? `live zoning · ${result.source}` : "mock zoning · no backend configured";
+}
+
 function violationList(violations: readonly Violation[]): string {
   if (violations.length === 0) return `<p class="ok">No violations. Compliant.</p>`;
   return `<ul>${violations.map((v) => `<li><b>${v.type}</b>: ${v.humanReadable}</li>`).join("")}</ul>`;
@@ -53,6 +60,7 @@ els.read.onclick = guard(async () => {
   const zoning = await fetchZoning(site.parcelId);
   envelope = zoning.envelope;
   zoningSource = zoning.source;
+  setZoningStatus(zoning);
   plan = null;
   const violations = checkCompliance(site, envelope);
   log(
@@ -92,6 +100,7 @@ els.undo.onclick = guard(async () => {
   const zoning = await fetchZoning(site.parcelId);
   envelope = zoning.envelope;
   zoningSource = zoning.source;
+  setZoningStatus(zoning);
   plan = null;
   log(`<h4>Reverted</h4><p>Correction meshes removed; back to the original massing.</p>${violationList(checkCompliance(site, envelope))}`);
 });

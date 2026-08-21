@@ -17,6 +17,8 @@ const mock = new MockZoningProvider();
 export interface ZoningResult {
   readonly envelope: ZoningEnvelope;
   readonly source: string;
+  /** true when the envelope came from the live backend, false when it's the mock. */
+  readonly live: boolean;
 }
 
 function backendUrl(): string | null {
@@ -35,12 +37,16 @@ export async function fetchZoning(parcelId: string): Promise<ZoningResult> {
         const [lat, lng] = loc;
         const res = await fetch(`${backend}/zoning?lat=${lat}&lng=${lng}`);
         if (res.ok) {
-          return { envelope: (await res.json()) as ZoningEnvelope, source: `live zoning for ${lat.toFixed(4)}, ${lng.toFixed(4)}` };
+          return {
+            envelope: (await res.json()) as ZoningEnvelope,
+            source: `live zoning for ${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+            live: true,
+          };
         }
       }
     } catch {
       // fall through to the mock so the panel still works
     }
   }
-  return { envelope: await mock.getEnvelope(parcelId), source: "mock values (no zoning backend configured)" };
+  return { envelope: await mock.getEnvelope(parcelId), source: "mock values (no zoning backend configured)", live: false };
 }

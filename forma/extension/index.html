@@ -50,10 +50,31 @@
       code {
         font-size: 12px;
       }
+      #zoning-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        margin-bottom: 8px;
+        color: #666;
+      }
+      #zoning-status .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #bbb;
+      }
+      #zoning-status.live .dot {
+        background: #1a7f37;
+      }
+      #zoning-status.live {
+        color: #1a7f37;
+      }
     </style>
   </head>
   <body>
     <h3>Compliance-aware massing</h3>
+    <div id="zoning-status"><span class="dot"></span><span id="zoning-status-text">zoning: not checked yet</span></div>
     <button id="read"></button>
     <button id="propose"></button>
     <button id="commit"></button>
