@@ -103,6 +103,25 @@ The two things Forma doesn't hand you cleanly per building — floor count and p
 
 The stdio server is the license-free path. For an agent to drive the *live* scene, run the HTTP entrypoint (`npm run start:http`) — it exposes the same MCP tools over Streamable HTTP plus a small bridge the extension talks to: the extension `POST`s the scene it read to `/bridge/scene`, and polls `/bridge/ops` for approved edits to draw. One shared engine backs both, so the agent and the canvas stay in sync. The extension also runs the whole loop on its own using the same core, so live mode works with or without an agent attached.
 
+## Live zoning via Zoneomics (real regulations)
+
+By default the envelope comes from `MockZoningProvider` — seeded values, the same for every parcel, so the demo runs with no key. To check against **real** zoning for the actual parcel, the extension can fetch it from a small backend that holds a Zoneomics API key:
+
+```
+extension (browser) --lat/lng--> your backend (/zoning, holds the key) --> Zoneomics v2/zoneDetail
+```
+
+The key lives on the backend, never in the browser — that's the whole reason the lookup is proxied rather than called from the iframe. The parcel's lat/lng comes from `Forma.project.getGeoLocation()`.
+
+**Set it up:**
+1. **Get a Zoneomics API key** at [zoneomics.com](https://www.zoneomics.com/product/api). The zoning-controls data is a paid/trial plan — the free tier is mostly map tiling.
+2. **Deploy the backend.** The repo's `render.yaml` deploys `forma/mcp` over HTTP on Render's free tier: *New → Blueprint → pick this repo*, then set `ZONING_API_KEY` (secret) in the dashboard. `ZONING_PROVIDER=zoneomics` is already set. You get a URL like `https://forma-compliance-mcp.onrender.com`.
+3. **Point the extension at it** by adding `?backend=<that URL>` to the extension's iframe URL in the Forma manifest, e.g. `https://kseniak.github.io/fantastic-funicular/?backend=https://forma-compliance-mcp.onrender.com`.
+
+Now **Read massing** shows the live envelope and where it came from. With no `?backend=`, it falls back to the mock, so the demo never breaks.
+
+Zoneomics' control field names vary by jurisdiction, so the mapping (`src/zoning/zoneomics.ts`) deep-searches the payload and falls back to the mock per field. Hit `GET <backend>/zoning?lat=..&lng=..&debug=1` to see the raw response and confirm the mapping for your area — height/setbacks are treated as feet and converted to metres, coverage is normalized to a 0–1 ratio.
+
 ## Set up live mode in Forma (first-time, start to finish)
 
 This assumes you have a Forma trial or AEC Collection access and have never registered an extension before. Where a step needs an Autodesk-side action only you can do, it says so with the link.
@@ -146,7 +165,7 @@ The extension bridge and MCP wiring aren't unit-tested (they're thin glue over t
 ## What I'd do next for production
 
 - **Persist the corrected geometry.** Swap the render-mesh overlay for the Integrate `updateElement` write so the correction becomes a real element, with optimistic concurrency against concurrent Forma edits (version proposals against the scene revision they were built on).
-- **A real ZoningProvider.** Wire `RegridProvider` (or Zoneomics) with response caching and jurisdiction fallbacks — the field names and units differ per source, so it needs a per-source adapter behind the same interface.
+- **Harden the ZoningProvider.** The live `ZoneomicsProvider` works (see above); production would add response caching, retry/jurisdiction fallbacks, and a verified field mapping per region rather than the deep-search heuristic. `RegridProvider` stays a stub behind the same interface.
 - **Server-side policy enforcement + auth.** OAuth-scoped Forma app with per-tool token scopes so "can propose" and "can commit" are separate grants, and make `blocked` / `needs-approval` enforceable server-side and configurable per tenant.
 - **Richer geometry.** Non-convex insets (straight-skeleton offset), per-edge setbacks driven by real street-frontage detection, and floor-plate templates instead of a single extruded footprint.
 

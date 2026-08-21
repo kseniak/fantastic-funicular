@@ -8,14 +8,13 @@
 import { checkCompliance, type Violation } from "forma-compliance-mcp/dist/compliance.js";
 import { planCompliance, type Edit } from "forma-compliance-mcp/dist/fixes.js";
 import { evaluate } from "forma-compliance-mcp/dist/policy.js";
-import { MockZoningProvider } from "forma-compliance-mcp/dist/zoning/mock.js";
 import type { Site, ZoningEnvelope } from "forma-compliance-mcp/dist/site.js";
 import { clearCorrections, drawCorrections, readSiteFromForma } from "./forma.js";
-
-const zoning = new MockZoningProvider();
+import { fetchZoning } from "./zoning.js";
 
 let site: Site | null = null;
 let envelope: ZoningEnvelope | null = null;
+let zoningSource = "";
 let plan: { edits: Edit[]; resultingSite: Site; resultingCompliance: Violation[] } | null = null;
 
 const els = {
@@ -41,13 +40,24 @@ function violationList(violations: readonly Violation[]): string {
   return `<ul>${violations.map((v) => `<li><b>${v.type}</b>: ${v.humanReadable}</li>`).join("")}</ul>`;
 }
 
+function envelopeSummary(e: ZoningEnvelope): string {
+  return (
+    `<p class="policy">Regulations: ${zoningSource}</p>` +
+    `<p>max height ${e.maxHeight} m · setbacks F/S/R ${e.frontSetback}/${e.sideSetback}/${e.rearSetback} m · ` +
+    `FAR ${e.maxFAR} · coverage ${Math.round(e.maxLotCoverage * 100)}% · uses: ${e.allowedUses.join(", ")}</p>`
+  );
+}
+
 els.read.onclick = guard(async () => {
   site = await readSiteFromForma();
-  envelope = await zoning.getEnvelope(site.parcelId);
+  const zoning = await fetchZoning(site.parcelId);
+  envelope = zoning.envelope;
+  zoningSource = zoning.source;
   plan = null;
   const violations = checkCompliance(site, envelope);
   log(
     `<p>Read <b>${site.buildings.length}</b> building(s) on parcel <code>${site.parcelId}</code>.</p>` +
+      envelopeSummary(envelope) +
       `<h4>Compliance</h4>${violationList(violations)}`,
   );
 });
@@ -79,7 +89,9 @@ els.commit.onclick = guard(async () => {
 els.undo.onclick = guard(async () => {
   await clearCorrections();
   site = await readSiteFromForma();
-  envelope = await zoning.getEnvelope(site.parcelId);
+  const zoning = await fetchZoning(site.parcelId);
+  envelope = zoning.envelope;
+  zoningSource = zoning.source;
   plan = null;
   log(`<h4>Reverted</h4><p>Correction meshes removed; back to the original massing.</p>${violationList(checkCompliance(site, envelope))}`);
 });
