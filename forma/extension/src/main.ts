@@ -9,7 +9,7 @@ import { checkCompliance, type Violation } from "forma-compliance-mcp/dist/compl
 import { planCompliance, type Edit } from "forma-compliance-mcp/dist/fixes.js";
 import { evaluate } from "forma-compliance-mcp/dist/policy.js";
 import type { Site, ZoningEnvelope } from "forma-compliance-mcp/dist/site.js";
-import { clearCorrections, drawCorrections, readSiteFromForma } from "./forma.js";
+import { clearCorrections, describeScene, drawCorrections, readSiteFromForma } from "./forma.js";
 import { fetchZoning } from "./zoning.js";
 
 let site: Site | null = null;
@@ -22,6 +22,7 @@ const els = {
   propose: button("propose", "Check & make compliant"),
   commit: button("commit", "Commit (draw corrected massing)"),
   undo: button("undo", "Undo"),
+  debug: button("debug", "Debug scene"),
   status: document.getElementById("status") as HTMLDivElement,
 };
 
@@ -103,6 +104,15 @@ els.undo.onclick = guard(async () => {
   setZoningStatus(zoning);
   plan = null;
   log(`<h4>Reverted</h4><p>Correction meshes removed; back to the original massing.</p>${violationList(checkCompliance(site, envelope))}`);
+});
+
+els.debug.onclick = guard(async () => {
+  const report = await describeScene();
+  const text = JSON.stringify(report, null, 2);
+  log(
+    `<h4>Scene debug</h4><p>Copy this and send it back so the read logic can be matched to your project.</p>` +
+      `<pre style="white-space:pre-wrap;font-size:11px;background:#0000000a;padding:8px;border-radius:6px;overflow:auto">${text.replace(/</g, "&lt;")}</pre>`,
+  );
 });
 
 function guard(fn: () => Promise<void>): () => void {
