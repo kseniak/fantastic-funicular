@@ -112,9 +112,8 @@ els.propose.onclick = guard(async () => {
   );
 });
 
-/** ?write=1 opts into the experimental model write (replaceElement). Default is
- *  the reliable, non-destructive green preview at the building's location. */
-const modelWriteEnabled = new URLSearchParams(location.search).get("write") === "1";
+/** ?preview=1 keeps the old non-destructive green overlay instead of writing the model. */
+const previewOnly = new URLSearchParams(location.search).get("preview") === "1";
 
 els.commit.onclick = guard(async () => {
   if (!plan || !envelope) throw new Error("Make a proposal first.");
@@ -125,21 +124,19 @@ els.commit.onclick = guard(async () => {
   }
 
   let note: string;
-  if (modelWriteEnabled) {
+  if (previewOnly) {
+    await drawCorrections(plan.edits);
+    note = "Corrected massing drawn as a green preview (non-destructive).";
+  } else {
     try {
       const results = await writeCorrections(plan.edits);
       note =
-        `Wrote the corrected massing into the model (experimental; Undo restores the original):<br>` +
+        `Replaced the building with the corrected massing — one building at the end (Undo restores the original):<br>` +
         results.map((r) => `${r.buildingId}<br>${r.extent}`).join("<br>");
     } catch (e) {
       await drawCorrections(plan.edits);
-      note = `Model write failed (${e instanceof Error ? e.message : String(e)}); showing the preview instead.`;
+      note = `Model write failed (${e instanceof Error ? e.message : String(e)}); showing the green preview instead.`;
     }
-  } else {
-    await drawCorrections(plan.edits);
-    note =
-      "Corrected massing drawn as a green preview at the building's location (non-destructive). " +
-      "Add <code>?write=1</code> to the extension URL to write it into the model instead.";
   }
 
   site = plan.resultingSite;
