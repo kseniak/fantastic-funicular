@@ -361,7 +361,6 @@ async function createVolumeMeshElement(positions: Float32Array): Promise<string>
 
   try {
     const { urn } = await Forma.integrateElements.createElementV2({
-      properties: { category: "building" },
       representations: { volumeMesh: { type: "linked", blobId } },
     });
     return urn;
