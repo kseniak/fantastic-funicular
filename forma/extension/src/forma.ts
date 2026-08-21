@@ -31,8 +31,8 @@ const STOREY_HEIGHT = 3;
 const correctionMeshes = new Map<string, string>();
 /** buildingId -> the Forma element path it was read from. */
 const buildingPaths = new Map<string, string>();
-/** buildingId -> the path of the corrected element we added, so undo can remove it. */
-const addedPaths = new Map<string, string>();
+/** buildingId -> the original element urn at its path, so undo can put it back. */
+const originalUrns = new Map<string, string>();
 
 export async function readSiteFromForma(): Promise<Site> {
   const boundaryPolygon = await readParcelBoundary();
@@ -311,14 +311,18 @@ export async function writeCorrections(edits: readonly Edit[]): Promise<WriteRes
   }
   const results: WriteResult[] = [];
   for (const edit of edits) {
+    const path = buildingPaths.get(edit.buildingId);
+    if (!path) continue;
+    // Remember the original element so undo can restore it.
+    if (!originalUrns.has(edit.buildingId)) {
+      const { element } = await Forma.elements.getByPath({ path });
+      originalUrns.set(edit.buildingId, element.urn);
+    }
     const b = edit.after;
     const positions = extrudeMesh(b.footprint as [number, number][], b.baseZ, b.height);
     const urn = await createVolumeMeshElement(positions);
-    // Non-destructive for now: add the corrected building alongside the original
-    // so we can confirm the GLB renders and lands correctly before switching to
-    // replaceElement. Undo removes it.
-    const { path } = await Forma.proposal.addElement({ urn, name: `${edit.buildingId} (compliant)` });
-    addedPaths.set(edit.buildingId, path);
+    // Replace the original building with the corrected one — one building at the end.
+    await Forma.proposal.replaceElement({ path, urn });
     const bb = boundingBox(b.footprint);
     results.push({
       buildingId: edit.buildingId,
@@ -335,17 +339,18 @@ function round(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
-/** Remove the corrected elements we added — the persisted-commit counterpart to undo. */
+/** Put the original buildings back — the persisted-commit counterpart to undo. */
 export async function revertCorrections(): Promise<void> {
-  for (const path of addedPaths.values()) {
-    await Forma.proposal.removeElement({ path });
+  for (const [id, urn] of originalUrns) {
+    const path = buildingPaths.get(id);
+    if (path) await Forma.proposal.replaceElement({ path, urn });
   }
-  addedPaths.clear();
+  originalUrns.clear();
   await Forma.proposal.awaitProposalPersisted();
 }
 
 export function hasPersistedEdits(): boolean {
-  return addedPaths.size > 0;
+  return originalUrns.size > 0;
 }
 
 async function createVolumeMeshElement(positions: Float32Array): Promise<string> {

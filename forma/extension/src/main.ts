@@ -118,8 +118,8 @@ els.commit.onclick = guard(async () => {
   try {
     const results = await writeCorrections(plan.edits);
     note = results.length
-      ? `Added corrected massing (persists, next to the original — Undo removes it):<br>` +
-        results.map((r) => `${r.buildingId} → <code>${r.path}</code><br>${r.extent}`).join("<br>")
+      ? `Replaced the building with the corrected massing (persists; Undo restores the original):<br>` +
+        results.map((r) => `${r.buildingId}<br>${r.extent}`).join("<br>")
       : "No edits to write — the site is already compliant with the current envelope, so there's nothing to change.";
   } catch (e) {
     await drawCorrections(plan.edits);
