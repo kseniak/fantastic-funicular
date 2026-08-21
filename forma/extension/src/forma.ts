@@ -31,8 +31,10 @@ const STOREY_HEIGHT = 3;
 const correctionMeshes = new Map<string, string>();
 /** buildingId -> the Forma element path it was read from. */
 const buildingPaths = new Map<string, string>();
-/** buildingId -> the original element urn at its path, so undo can put it back. */
+/** buildingId -> the original element urn, so undo can re-add it. */
 const originalUrns = new Map<string, string>();
+/** buildingId -> the path of the corrected element we added, so undo can remove it. */
+const addedPaths = new Map<string, string>();
 
 export async function readSiteFromForma(): Promise<Site> {
   const boundaryPolygon = await readParcelBoundary();
@@ -320,19 +322,22 @@ export async function writeCorrections(edits: readonly Edit[]): Promise<WriteRes
       originalUrns.set(edit.buildingId, element.urn);
     }
     const b = edit.after;
-    // The new element is placed at identity, and getTriangles gave us world coords,
-    // so author the mesh directly in world coords — the same frame render.addMesh
-    // draws correctly in. (No transform subtraction; that moved it off-target.)
+    // Delete the original and add a fresh element at root, rather than
+    // replaceElement (which inherits the original's transform and mis-places the
+    // mesh). A root element defaults to identity with the project reference as
+    // origin — the same frame getTriangles/render.addMesh use — so the world-coord
+    // mesh lands exactly where the original was.
     const storey = b.floors > 0 ? b.height / b.floors : b.height;
     const positions = extrudeFloors(b.footprint as [number, number][], b.baseZ, storey, b.floors);
     const urn = await createVolumeMeshElement(positions);
-    // Replace the original building with the corrected one — one building at the end.
-    await Forma.proposal.replaceElement({ path, urn });
+    await Forma.proposal.removeElement({ path });
+    const added = await Forma.proposal.addElement({ urn, name: `${edit.buildingId} (compliant)` });
+    addedPaths.set(edit.buildingId, added.path);
     const bb = boundingBox(b.footprint);
     results.push({
       buildingId: edit.buildingId,
       urn,
-      path,
+      path: added.path,
       extent: `x[${round(bb.minX)}..${round(bb.maxX)}] y[${round(bb.minY)}..${round(bb.maxY)}] z[${round(b.baseZ)}..${round(b.baseZ + b.height)}]`,
     });
   }
@@ -344,11 +349,14 @@ function round(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
-/** Put the original buildings back — the persisted-commit counterpart to undo. */
+/** Undo the commit: remove the corrected elements and re-add the originals. */
 export async function revertCorrections(): Promise<void> {
-  for (const [id, urn] of originalUrns) {
-    const path = buildingPaths.get(id);
-    if (path) await Forma.proposal.replaceElement({ path, urn });
+  for (const path of addedPaths.values()) {
+    await Forma.proposal.removeElement({ path });
+  }
+  addedPaths.clear();
+  for (const urn of originalUrns.values()) {
+    await Forma.proposal.addElement({ urn });
   }
   originalUrns.clear();
   await Forma.proposal.awaitProposalPersisted();
