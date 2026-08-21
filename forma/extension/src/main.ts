@@ -99,7 +99,8 @@ els.commit.onclick = guard(async () => {
   let note: string;
   try {
     await writeCorrections(plan.edits);
-    note = "Corrected massing written to the model — it persists after you close the panel.";
+    note =
+      "Corrected massing added to the model (persists). It's placed next to the original for now so we can verify it renders in the right spot — Undo removes it. Once placement is confirmed I'll switch it to replace the original.";
   } catch (e) {
     await drawCorrections(plan.edits);
     note = `Couldn't write to the model (${e instanceof Error ? e.message : String(e)}); showing a preview overlay instead.`;
