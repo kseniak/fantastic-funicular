@@ -1,8 +1,8 @@
 /**
  * The browser-side Forma adapter — the live counterpart to the server's
  * MockBridge. It reads the current massing out of the Forma scene into the
- * internal site model, and writes corrected massing back as render meshes so the
- * change shows up in the canvas on commit.
+ * internal site model, and on commit writes the corrected massing back into the
+ * model (delete the original, add a corrected volumeMesh element in its place).
  *
  * A note on what's read: massing in Forma often has no footprint representation
  * (the geometry lives in child volume meshes), so the footprint is derived from
@@ -12,9 +12,10 @@
  * wired to the element's program property. Those are the documented
  * simplifications — the geometry that drives every compliance check is read for real.
  *
- * Writing corrected geometry uses render meshes (visible immediately, no persist)
- * rather than the Integrate updateElement path, which is the production write and
- * is called out in the README.
+ * The write goes through the Integrate API: build the corrected massing as a GLB
+ * volumeMesh (see glb.ts), upload it, create an element, and remove+add at the
+ * proposal root so it lands in the project-reference frame. `?preview=1` keeps a
+ * non-destructive render.addMesh overlay instead. Both are exposed here.
  */
 
 import { Forma } from "forma-embedded-view-sdk/auto";
@@ -31,8 +32,8 @@ const STOREY_HEIGHT = 3;
 const correctionMeshes = new Map<string, string>();
 /** buildingId -> the Forma element path it was read from. */
 const buildingPaths = new Map<string, string>();
-/** buildingId -> the original element urn, so undo can re-add it. */
-const originalUrns = new Map<string, string>();
+/** buildingId -> the pre-fix building, so undo can rebuild it the same reliable way. */
+const originalBuildings = new Map<string, Building>();
 /** buildingId -> the path of the corrected element we added, so undo can remove it. */
 const addedPaths = new Map<string, string>();
 
@@ -316,22 +317,18 @@ export async function writeCorrections(edits: readonly Edit[]): Promise<WriteRes
   for (const edit of edits) {
     const path = buildingPaths.get(edit.buildingId);
     if (!path) continue;
-    // Remember the original element so undo can restore it.
-    if (!originalUrns.has(edit.buildingId)) {
-      const { element } = await Forma.elements.getByPath({ path });
-      originalUrns.set(edit.buildingId, element.urn);
-    }
+    // Remember the pre-fix building so undo can rebuild it the same reliable way.
+    originalBuildings.set(edit.buildingId, edit.before);
     const b = edit.after;
     // Delete the original and add a fresh element at root, rather than
     // replaceElement (which inherits the original's transform and mis-places the
     // mesh). A root element defaults to identity with the project reference as
     // origin — the same frame getTriangles/render.addMesh use — so the world-coord
     // mesh lands exactly where the original was.
-    const storey = b.floors > 0 ? b.height / b.floors : b.height;
-    const positions = extrudeFloors(b.footprint as [number, number][], b.baseZ, storey, b.floors);
-    const urn = await createVolumeMeshElement(positions);
+    const urn = await elementFromBuilding(b);
     await Forma.proposal.removeElement({ path });
     const added = await Forma.proposal.addElement({ urn, name: `${edit.buildingId} (compliant)` });
+    buildingPaths.set(edit.buildingId, added.path);
     addedPaths.set(edit.buildingId, added.path);
     const bb = boundingBox(b.footprint);
     results.push({
@@ -349,21 +346,30 @@ function round(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
-/** Undo the commit: remove the corrected elements and re-add the originals. */
+/** Build a Forma volumeMesh element from a building (stacked floor slabs). */
+async function elementFromBuilding(b: Building): Promise<string> {
+  const storey = b.floors > 0 ? b.height / b.floors : b.height;
+  const positions = extrudeFloors(b.footprint as [number, number][], b.baseZ, storey, b.floors);
+  return createVolumeMeshElement(positions);
+}
+
+/** Undo the commit: remove the corrected elements and rebuild the originals in place. */
 export async function revertCorrections(): Promise<void> {
   for (const path of addedPaths.values()) {
     await Forma.proposal.removeElement({ path });
   }
   addedPaths.clear();
-  for (const urn of originalUrns.values()) {
-    await Forma.proposal.addElement({ urn });
+  for (const [id, original] of originalBuildings) {
+    const urn = await elementFromBuilding(original);
+    const added = await Forma.proposal.addElement({ urn, name: `${id} (original)` });
+    buildingPaths.set(id, added.path);
   }
-  originalUrns.clear();
+  originalBuildings.clear();
   await Forma.proposal.awaitProposalPersisted();
 }
 
 export function hasPersistedEdits(): boolean {
-  return originalUrns.size > 0;
+  return originalBuildings.size > 0;
 }
 
 async function createVolumeMeshElement(positions: Float32Array): Promise<string> {

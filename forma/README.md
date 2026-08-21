@@ -25,7 +25,7 @@ That last step is the whole project. The agent reads the current massing out of 
 ## What's in here
 
 - **`mcp/`** — the MCP server (TypeScript, stdio). This is the brain: the compliance engine, the fix strategies, and the trust boundary. It's completely Forma-agnostic — it speaks a small internal "site model" and nothing else.
-- **`extension/`** — the Forma embedded-view extension. This is the only Forma-specific adapter: it reads the real scene and draws the corrected massing back into the canvas.
+- **`extension/`** — the Forma embedded-view extension. This is the only Forma-specific adapter: it reads the real scene and writes the corrected massing back into the model (the original building is replaced by the compliant one, and it persists in the proposal).
 - **`mock/site.json`** — an offline scene (a parcel + two buildings, one non-compliant) so the whole loop is runnable and testable without a Forma license.
 
 I kept Forma behind one thin adapter on purpose. The interesting logic — is this compliant, what change fixes it, can this change be safely applied — is all pure functions over the site model, so I can unit-test it hard and run the full demo with no Autodesk account. The extension (or the mock file) is the only thing that has to know what a Forma element is. That split is the design decision I'd most want a reviewer to notice.
@@ -108,10 +108,12 @@ Try `propose_fix` with a single violation id from `check_compliance` to fix just
 
 This is real, not hand-waved. The Forma **Embedded View SDK** (`forma-embedded-view-sdk`, the same package Autodesk's own open-source extensions use) is what the extension runs on:
 
-- **Read:** `Forma.geometry.getPathsByCategory({ category: "buildings" | "site_limit" })` → `Forma.geometry.getFootprint({ path })` for the xy polygons, and `Forma.geometry.getTriangles({ path })` for the z-extent that gives height and base. That's mapped into the internal site model in `extension/src/forma.ts`.
-- **Write:** on commit the extension draws the corrected massing with `Forma.render.addMesh` / `updateMesh` (removed again on undo). Render meshes show up in the canvas immediately, which is what makes the loop visible without a persist step. The production write is the **Integrate API** (`createElementHierarchy` / `updateElement`) or the **Geometries** batch-create GeoJSON path — that persists the corrected element rather than overlaying it, and it's the first thing I'd wire next (see below).
+- **Read:** `Forma.geometry.getPathsByCategory` finds the massing (any of `building`/`house`/… categories, with a fallback to everything inside the `site_limit`), and `Forma.geometry.getTriangles({ path })` returns its mesh. Real massing usually has no footprint representation — the geometry lives in child volume meshes — so the footprint is derived as the convex hull of the mesh's xy projection and the height from its z-extent. The `site_limit` footprint (which *does* have a footprint representation) is the parcel boundary. All of this maps into the internal site model in `extension/src/forma.ts`.
+- **Write:** on commit the extension builds the corrected massing as a stack of floor slabs, encodes it as a GLB (`glb.ts`), uploads it with `integrateElements.uploadFile`, creates a `volumeMesh` element with `createElementV2`, then **removes the original building and adds the new one** (`proposal.removeElement` + `addElement`) — a fresh root element lands in the project-reference frame the read/preview use, whereas `replaceElement` inherited the original's transform and mis-placed it. The GLB is emitted Y-up because Forma converts Y-up→Z-up on import. Undo removes the corrected element and re-adds the original. `?preview=1` on the extension URL keeps a non-destructive `render.addMesh` overlay instead of writing the model.
 
 The two things Forma doesn't hand you cleanly per building — floor count and program/use — are derived (floors from height / storey height) and defaulted (use → residential) in the adapter. Every number that actually drives a compliance check is read for real.
+
+> Getting this write to land upright and in place was the fiddly part: GLB back-face culling (fixed with normals + double-siding), the element transform frame (fixed by delete-and-add at root instead of replace), and the glTF up-axis (fixed by emitting Y-up). Those are the kinds of platform-specific edges you only hit by actually writing geometry back, which was the point.
 
 ### Live mode with an agent driving it
 
@@ -119,7 +121,7 @@ The stdio server is the license-free path. For an agent to drive the *live* scen
 
 ## Live zoning via Zoneomics (real regulations)
 
-By default the envelope comes from `MockZoningProvider` — seeded values, the same for every parcel, so the demo runs with no key. To check against **real** zoning for the actual parcel, the extension can fetch it from a small backend that holds a Zoneomics API key:
+By default the envelope comes from `MockZoningProvider`. The offline mock scene gets the demo envelope; a real Forma parcel with no zoning-API coverage (e.g. anywhere outside the US/Canada, like the Oslo project I tested on) falls back to a typical residential zone (`RESIDENTIAL_DEFAULT`: ~9 m height, 24% coverage, 4 m setbacks) so the check is meaningful rather than blank. The panel shows which source is in play. To check against **real** zoning for a US/Canada parcel, the extension can fetch it from a small backend that holds a Zoneomics API key:
 
 ```
 extension (browser) --lat/lng--> your backend (/zoning, holds the key) --> Zoneomics v2/zoneDetail
@@ -178,7 +180,7 @@ The extension bridge and MCP wiring aren't unit-tested (they're thin glue over t
 
 ## What I'd do next for production
 
-- **Persist the corrected geometry.** Swap the render-mesh overlay for the Integrate `updateElement` write so the correction becomes a real element, with optimistic concurrency against concurrent Forma edits (version proposals against the scene revision they were built on).
+- **Preserve the original element on write.** The commit deletes the original and adds a corrected volumeMesh; undo rebuilds the original from the read massing (a convex-hull approximation), not the exact source element. Production would keep the true original (store the full element, or use a proper edit-in-place once the transform frame is pinned down) and add optimistic concurrency against concurrent Forma edits.
 - **Harden the ZoningProvider.** The live `ZoneomicsProvider` works (see above); production would add response caching, retry/jurisdiction fallbacks, and a verified field mapping per region rather than the deep-search heuristic. `RegridProvider` stays a stub behind the same interface.
 - **Server-side policy enforcement + auth.** OAuth-scoped Forma app with per-tool token scopes so "can propose" and "can commit" are separate grants, and make `blocked` / `needs-approval` enforceable server-side and configurable per tenant.
 - **Richer geometry.** Non-convex insets (straight-skeleton offset), per-edge setbacks driven by real street-frontage detection, and floor-plate templates instead of a single extruded footprint.
@@ -188,4 +190,6 @@ The extension bridge and MCP wiring aren't unit-tested (they're thin glue over t
 - Geometry is 2D footprints extruded to a height — enough for real setback / height / FAR / coverage math, no solids.
 - Setbacks map to compass sides of an axis-aligned parcel (front = south, rear = north, side = east/west). Real zoning derives "front" from street frontage; that needs frontage data the model doesn't carry.
 - Floor count is derived from height, and building use defaults to residential in the live adapter, because Forma doesn't expose either as a single per-element field the way it exposes geometry.
-- `inset` is a convex offset; non-convex footprints need a straight-skeleton offset (listed above).
+- The footprint read from live geometry is the **convex hull** of the mesh, so a non-convex or notched building reads slightly larger than it is. `inset` (and the corrected massing) is likewise a convex offset; non-convex outlines need a straight-skeleton offset (listed above).
+- For a parcel with no zoning-API coverage the envelope is a **seeded residential default**, not that parcel's actual plan — good enough to demonstrate the loop, not a substitute for the real reguleringsplan/zoning code.
+- On commit the original element is replaced by a rebuilt volumeMesh; **undo reconstructs the original from the read massing** rather than restoring the exact source element (see next steps). Forma's own Ctrl+Z restores the true original at any time.
