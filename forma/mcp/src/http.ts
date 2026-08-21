@@ -22,7 +22,7 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 
 import { ComplianceEngine } from "./proposals.js";
 import { LiveBridge, MockBridge } from "./bridge.js";
-import { providerFromEnv } from "./zoning/index.js";
+import { providerFromEnv, ZoneomicsProvider } from "./zoning/index.js";
 import { buildServer } from "./mcpServer.js";
 
 const MCP_PATH = "/mcp";
@@ -37,7 +37,8 @@ async function main(): Promise<void> {
   // Seed from the mock so the tools work before the extension pushes a live
   // scene; the first POST /bridge/scene replaces it with real Forma geometry.
   const seed = await new MockBridge(sitePath()).loadSite();
-  const engine = new ComplianceEngine(seed, providerFromEnv(), bridge);
+  const provider = providerFromEnv();
+  const engine = new ComplianceEngine(seed, provider, bridge);
 
   const app = express();
   app.use(express.json({ limit: "4mb" }));
@@ -66,6 +67,27 @@ async function main(): Promise<void> {
 
   app.get("/bridge/ops", (_req: Request, res: Response) => {
     res.json({ ops: bridge.drainOutbox() });
+  });
+
+  // Keyed zoning lookup for the extension: lat/lng -> envelope. The API key lives
+  // here (server-side), never in the browser. ?debug=1 returns the raw provider
+  // payload so the field mapping can be checked against a real response.
+  app.get("/zoning", async (req: Request, res: Response) => {
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      res.status(400).json({ error: "lat and lng query params are required." });
+      return;
+    }
+    try {
+      if (req.query.debug && provider instanceof ZoneomicsProvider) {
+        res.json(await provider.rawFor({ lat, lng }));
+        return;
+      }
+      res.json(await provider.getEnvelope({ lat, lng }));
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+    }
   });
 
   // ── MCP over Streamable HTTP (one shared engine across sessions) ───────────

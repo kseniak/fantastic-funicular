@@ -1,0 +1,21 @@
+# Free one-click deploy of the Forma compliance MCP server over HTTP, so it can
+# hold the Zoneomics API key and serve the extension's /zoning lookup.
+# In Render: New -> Blueprint -> pick this repo, then set ZONING_API_KEY (secret)
+# in the dashboard. The service URL is what you pass to the extension as
+# ?backend=https://<service>.onrender.com on its Forma iframe URL.
+services:
+  - type: web
+    name: forma-compliance-mcp
+    runtime: node
+    plan: free
+    rootDir: forma/mcp
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:http
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: ZONING_PROVIDER
+        value: zoneomics
+      - key: ZONING_API_KEY
+        sync: false # set this in the Render dashboard; it is a secret, never commit it
