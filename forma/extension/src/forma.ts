@@ -4,12 +4,13 @@
  * internal site model, and writes corrected massing back as render meshes so the
  * change shows up in the canvas on commit.
  *
- * A note on what's read: Forma's geometry API gives footprints (xy polygons) and
- * triangle meshes. Height and base come from the mesh's z-extent. Floor count is
- * derived from height (Forma doesn't expose a single "floors" field on every
- * element), and use defaults to residential until wired to the element's program
- * property. Those two are the documented simplifications — the geometry that
- * drives every compliance check is read for real.
+ * A note on what's read: massing in Forma often has no footprint representation
+ * (the geometry lives in child volume meshes), so the footprint is derived from
+ * the element's triangle mesh — convex hull of the xy projection — and height/base
+ * from its z-extent. Floor count is derived from height (Forma doesn't expose a
+ * single "floors" field on every element), and use defaults to residential until
+ * wired to the element's program property. Those are the documented
+ * simplifications — the geometry that drives every compliance check is read for real.
  *
  * Writing corrected geometry uses render meshes (visible immediately, no persist)
  * rather than the Integrate updateElement path, which is the production write and
@@ -127,34 +128,69 @@ async function readBuildings(boundary: [number, number][]): Promise<Building[]> 
   const paths = await collectMassingPaths(boundary);
   const buildings: Building[] = [];
   for (const path of paths) {
-    const fp = await Forma.geometry.getFootprint({ path });
-    // Only closed polygons are massing; skip line strings (site limit, roads).
-    if (!fp || fp.type !== "Polygon" || fp.coordinates.length < 3) continue;
-    const { baseZ, height } = await zExtent(path);
+    // Massing here has no footprint representation — geometry lives in child
+    // volume meshes — so derive both footprint and height from the triangles.
+    const tris = await Forma.geometry.getTriangles({ path });
+    const geo = massingFromTriangles(tris);
+    if (!geo) continue;
     const id = shortId(path);
     buildingPaths.set(id, path);
     buildings.push({
       id,
-      footprint: fp.coordinates,
-      baseZ,
-      height,
-      floors: Math.max(1, Math.round(height / STOREY_HEIGHT)),
+      footprint: geo.footprint,
+      baseZ: geo.baseZ,
+      height: geo.height,
+      floors: Math.max(1, Math.round(geo.height / STOREY_HEIGHT)),
       function: "residential",
     });
   }
   return buildings;
 }
 
-async function zExtent(path: string): Promise<{ baseZ: number; height: number }> {
-  const tris = await Forma.geometry.getTriangles({ path });
-  let min = Infinity;
-  let max = -Infinity;
-  for (let i = 2; i < tris.length; i += 3) {
-    if (tris[i] < min) min = tris[i];
-    if (tris[i] > max) max = tris[i];
+/** Reduce a triangle soup to a footprint (convex hull of the xy projection) and a
+ *  height (z-extent). The model is convex-only, so the hull is the right shape;
+ *  a non-convex outline is a documented follow-up. */
+function massingFromTriangles(
+  tris: Float32Array,
+): { footprint: [number, number][]; baseZ: number; height: number } | null {
+  if (tris.length < 9) return null;
+  const pts: [number, number][] = [];
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (let i = 0; i + 2 < tris.length; i += 3) {
+    pts.push([tris[i], tris[i + 1]]);
+    const z = tris[i + 2];
+    if (z < minZ) minZ = z;
+    if (z > maxZ) maxZ = z;
   }
-  if (!isFinite(min)) return { baseZ: 0, height: STOREY_HEIGHT };
-  return { baseZ: min, height: Math.max(STOREY_HEIGHT, max - min) };
+  const footprint = convexHull(pts);
+  if (footprint.length < 3 || !isFinite(minZ)) return null;
+  return { footprint, baseZ: minZ, height: Math.max(STOREY_HEIGHT, maxZ - minZ) };
+}
+
+/** Andrew's monotone chain — returns a counter-clockwise convex hull. */
+function convexHull(points: [number, number][]): [number, number][] {
+  const pts = [...new Map(points.map((p) => [`${p[0]},${p[1]}`, p])).values()].sort(
+    (a, b) => a[0] - b[0] || a[1] - b[1],
+  );
+  if (pts.length < 3) return pts;
+  const cross = (o: [number, number], a: [number, number], b: [number, number]) =>
+    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+
+  const lower: [number, number][] = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper: [number, number][] = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  lower.pop();
+  upper.pop();
+  return lower.concat(upper);
 }
 
 function shortId(path: string): string {
