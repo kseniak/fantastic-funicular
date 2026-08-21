@@ -112,19 +112,36 @@ els.propose.onclick = guard(async () => {
   );
 });
 
+/** ?write=1 opts into the experimental model write (replaceElement). Default is
+ *  the reliable, non-destructive green preview at the building's location. */
+const modelWriteEnabled = new URLSearchParams(location.search).get("write") === "1";
+
 els.commit.onclick = guard(async () => {
   if (!plan || !envelope) throw new Error("Make a proposal first.");
-  let note: string;
-  try {
-    const results = await writeCorrections(plan.edits);
-    note = results.length
-      ? `Replaced the building with the corrected massing (persists; Undo restores the original):<br>` +
-        results.map((r) => `${r.buildingId}<br>${r.extent}`).join("<br>")
-      : "No edits to write — the site is already compliant with the current envelope, so there's nothing to change.";
-  } catch (e) {
-    await drawCorrections(plan.edits);
-    note = `Couldn't write to the model (${e instanceof Error ? e.message : String(e)}); showing a preview overlay instead.`;
+  if (plan.edits.length === 0) {
+    log(`<h4>Committed</h4><p>No edits — the site already meets the envelope.</p>`);
+    plan = null;
+    return;
   }
+
+  let note: string;
+  if (modelWriteEnabled) {
+    try {
+      const results = await writeCorrections(plan.edits);
+      note =
+        `Wrote the corrected massing into the model (experimental; Undo restores the original):<br>` +
+        results.map((r) => `${r.buildingId}<br>${r.extent}`).join("<br>");
+    } catch (e) {
+      await drawCorrections(plan.edits);
+      note = `Model write failed (${e instanceof Error ? e.message : String(e)}); showing the preview instead.`;
+    }
+  } else {
+    await drawCorrections(plan.edits);
+    note =
+      "Corrected massing drawn as a green preview at the building's location (non-destructive). " +
+      "Add <code>?write=1</code> to the extension URL to write it into the model instead.";
+  }
+
   site = plan.resultingSite;
   const violations = checkCompliance(site, envelope);
   plan = null;
