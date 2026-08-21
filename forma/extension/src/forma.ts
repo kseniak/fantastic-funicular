@@ -21,7 +21,7 @@ import { Forma } from "forma-embedded-view-sdk/auto";
 import { boundingBox } from "forma-compliance-mcp/dist/site.js";
 import type { Building, Site } from "forma-compliance-mcp/dist/site.js";
 import type { Edit } from "forma-compliance-mcp/dist/fixes.js";
-import { extrudeMesh } from "./mesh.js";
+import { extrudeFloors, extrudeMesh } from "./mesh.js";
 import { positionsToGlb } from "./glb.js";
 
 /** Metres per storey, used to turn a read height into a floor count. */
@@ -322,7 +322,8 @@ export async function writeCorrections(edits: readonly Edit[]): Promise<WriteRes
     // The new element is placed at identity, and getTriangles gave us world coords,
     // so author the mesh directly in world coords — the same frame render.addMesh
     // draws correctly in. (No transform subtraction; that moved it off-target.)
-    const positions = extrudeMesh(b.footprint as [number, number][], b.baseZ, b.height);
+    const storey = b.floors > 0 ? b.height / b.floors : b.height;
+    const positions = extrudeFloors(b.footprint as [number, number][], b.baseZ, storey, b.floors);
     const urn = await createVolumeMeshElement(positions);
     // Replace the original building with the corrected one — one building at the end.
     await Forma.proposal.replaceElement({ path, urn });
