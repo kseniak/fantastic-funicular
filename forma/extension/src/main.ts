@@ -8,7 +8,7 @@
 import { checkCompliance, type Violation } from "forma-compliance-mcp/dist/compliance.js";
 import { planCompliance, type Edit } from "forma-compliance-mcp/dist/fixes.js";
 import { evaluate } from "forma-compliance-mcp/dist/policy.js";
-import type { Site, ZoningEnvelope } from "forma-compliance-mcp/dist/site.js";
+import { extrudedFloorArea, polygonArea, type Site, type ZoningEnvelope } from "forma-compliance-mcp/dist/site.js";
 import {
   clearCorrections,
   describeScene,
@@ -64,6 +64,23 @@ function envelopeSummary(e: ZoningEnvelope): string {
   );
 }
 
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+
+function measurements(s: Site): string {
+  const lot = polygonArea(s.boundaryPolygon);
+  const foot = s.buildings.reduce((a, b) => a + polygonArea(b.footprint), 0);
+  const floor = s.buildings.reduce((a, b) => a + extrudedFloorArea(b), 0);
+  const rows = s.buildings
+    .map((b) => `${b.id}: ${round1(b.height)} m tall, ${b.floors} floors, footprint ${round1(polygonArea(b.footprint))} m²`)
+    .join("<br>");
+  return (
+    `<p><b>Measured</b> — lot ${round1(lot)} m²<br>${rows}<br>` +
+    `coverage ${round1((foot / lot) * 100)}% · FAR ${round1(floor / lot)}</p>`
+  );
+}
+
 els.read.onclick = guard(async () => {
   site = await readSiteFromForma();
   const zoning = await fetchZoning(site.parcelId);
@@ -74,6 +91,7 @@ els.read.onclick = guard(async () => {
   const violations = checkCompliance(site, envelope);
   log(
     `<p>Read <b>${site.buildings.length}</b> building(s) on parcel <code>${site.parcelId}</code>.</p>` +
+      measurements(site) +
       envelopeSummary(envelope) +
       `<h4>Compliance</h4>${violationList(violations)}`,
   );
@@ -98,9 +116,11 @@ els.commit.onclick = guard(async () => {
   if (!plan || !envelope) throw new Error("Make a proposal first.");
   let note: string;
   try {
-    await writeCorrections(plan.edits);
-    note =
-      "Corrected massing added to the model (persists). It's placed next to the original for now so we can verify it renders in the right spot — Undo removes it. Once placement is confirmed I'll switch it to replace the original.";
+    const results = await writeCorrections(plan.edits);
+    note = results.length
+      ? `Added corrected massing (persists, next to the original — Undo removes it):<br>` +
+        results.map((r) => `${r.buildingId} → <code>${r.path}</code><br>${r.extent}`).join("<br>")
+      : "No edits to write — the site is already compliant with the current envelope, so there's nothing to change.";
   } catch (e) {
     await drawCorrections(plan.edits);
     note = `Couldn't write to the model (${e instanceof Error ? e.message : String(e)}); showing a preview overlay instead.`;

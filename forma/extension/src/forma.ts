@@ -18,6 +18,7 @@
  */
 
 import { Forma } from "forma-embedded-view-sdk/auto";
+import { boundingBox } from "forma-compliance-mcp/dist/site.js";
 import type { Building, Site } from "forma-compliance-mcp/dist/site.js";
 import type { Edit } from "forma-compliance-mcp/dist/fixes.js";
 import { extrudeMesh } from "./mesh.js";
@@ -297,20 +298,41 @@ function solidColor(vertexCount: number, rgba: [number, number, number, number])
  * change survives closing the panel — unlike the render-mesh preview. The
  * original urns are kept so undo can put them back.
  */
-export async function writeCorrections(edits: readonly Edit[]): Promise<void> {
+export interface WriteResult {
+  readonly buildingId: string;
+  readonly urn: string;
+  readonly path: string;
+  readonly extent: string;
+}
+
+export async function writeCorrections(edits: readonly Edit[]): Promise<WriteResult[]> {
   if (!(await Forma.getCanEdit())) {
     throw new Error("You need collaborator or admin access on this project to write changes.");
   }
+  const results: WriteResult[] = [];
   for (const edit of edits) {
-    const positions = extrudeMesh(edit.after.footprint as [number, number][], edit.after.baseZ, edit.after.height);
+    const b = edit.after;
+    const positions = extrudeMesh(b.footprint as [number, number][], b.baseZ, b.height);
     const urn = await createVolumeMeshElement(positions);
     // Non-destructive for now: add the corrected building alongside the original
     // so we can confirm the GLB renders and lands correctly before switching to
     // replaceElement. Undo removes it.
     const { path } = await Forma.proposal.addElement({ urn, name: `${edit.buildingId} (compliant)` });
     addedPaths.set(edit.buildingId, path);
+    const bb = boundingBox(b.footprint);
+    results.push({
+      buildingId: edit.buildingId,
+      urn,
+      path,
+      extent: `x[${round(bb.minX)}..${round(bb.maxX)}] y[${round(bb.minY)}..${round(bb.maxY)}] z[${round(b.baseZ)}..${round(b.baseZ + b.height)}]`,
+    });
   }
   await Forma.proposal.awaitProposalPersisted();
+  return results;
+}
+
+function round(n: number): number {
+  return Math.round(n * 10) / 10;
 }
 
 /** Remove the corrected elements we added — the persisted-commit counterpart to undo. */
