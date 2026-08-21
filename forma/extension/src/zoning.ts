@@ -48,5 +48,9 @@ export async function fetchZoning(parcelId: string): Promise<ZoningResult> {
       // fall through to the mock so the panel still works
     }
   }
-  return { envelope: await mock.getEnvelope(parcelId), source: "mock values (no zoning backend configured)", live: false };
+  return {
+    envelope: await mock.getEnvelope(parcelId),
+    source: "seeded residential limits (no live zoning service for this location)",
+    live: false,
+  };
 }
