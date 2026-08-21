@@ -20,21 +20,24 @@ export function positionsToGlb(positions: Float32Array, zUp = true): ArrayBuffer
   // and an inward-wound solid then renders as nothing. Emitting each triangle in
   // both windings makes it visible regardless of orientation.
   const doubled = doubleSide(zUp ? positions : toYUp(positions));
-  const verts = doubled;
-  const count = Math.floor(verts.length / 3);
+  const positionData = doubled.subarray(0, Math.floor(doubled.length / 3) * 3);
+  const count = positionData.length / 3;
+  const normalData = computeFlatNormals(positionData);
 
   const min = [Infinity, Infinity, Infinity];
   const max = [-Infinity, -Infinity, -Infinity];
-  for (let i = 0; i < count * 3; i += 3) {
+  for (let i = 0; i < positionData.length; i += 3) {
     for (let k = 0; k < 3; k++) {
-      const v = verts[i + k];
+      const v = positionData[i + k];
       if (v < min[k]) min[k] = v;
       if (v > max[k]) max[k] = v;
     }
   }
 
-  const binBytes = new Uint8Array(new Float32Array(verts.subarray(0, count * 3)).buffer);
-  const binLen = binBytes.byteLength;
+  const posBytes = new Uint8Array(new Float32Array(positionData).buffer);
+  const normBytes = new Uint8Array(new Float32Array(normalData).buffer);
+  const posLen = posBytes.byteLength;
+  const binLen = posLen + normBytes.byteLength;
   const binPad = (4 - (binLen % 4)) % 4;
 
   const gltf = {
@@ -42,9 +45,15 @@ export function positionsToGlb(positions: Float32Array, zUp = true): ArrayBuffer
     scene: 0,
     scenes: [{ nodes: [0] }],
     nodes: [{ mesh: 0 }],
-    meshes: [{ primitives: [{ attributes: { POSITION: 0 }, mode: TRIANGLES }] }],
-    accessors: [{ bufferView: 0, byteOffset: 0, componentType: FLOAT, count, type: "VEC3", min, max }],
-    bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: binLen, target: ARRAY_BUFFER }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0, NORMAL: 1 }, mode: TRIANGLES }] }],
+    accessors: [
+      { bufferView: 0, byteOffset: 0, componentType: FLOAT, count, type: "VEC3", min, max },
+      { bufferView: 1, byteOffset: 0, componentType: FLOAT, count, type: "VEC3" },
+    ],
+    bufferViews: [
+      { buffer: 0, byteOffset: 0, byteLength: posLen, target: ARRAY_BUFFER },
+      { buffer: 0, byteOffset: posLen, byteLength: normBytes.byteLength, target: ARRAY_BUFFER },
+    ],
     buffers: [{ byteLength: binLen + binPad }],
   };
 
@@ -69,9 +78,34 @@ export function positionsToGlb(positions: Float32Array, zUp = true): ArrayBuffer
 
   dv.setUint32(o, binLen + binPad, true); o += 4;
   dv.setUint32(o, CHUNK_BIN, true); o += 4;
-  bytes.set(binBytes, o); // remaining pad bytes are already zero
+  bytes.set(posBytes, o); o += posLen;
+  bytes.set(normBytes, o); // remaining pad bytes are already zero
 
   return buf;
+}
+
+/** One flat face normal per triangle, repeated across its three vertices. */
+function computeFlatNormals(pos: Float32Array): Float32Array {
+  const n = new Float32Array(pos.length);
+  for (let t = 0; t + 8 < pos.length; t += 9) {
+    const ux = pos[t + 3] - pos[t];
+    const uy = pos[t + 4] - pos[t + 1];
+    const uz = pos[t + 5] - pos[t + 2];
+    const vx = pos[t + 6] - pos[t];
+    const vy = pos[t + 7] - pos[t + 1];
+    const vz = pos[t + 8] - pos[t + 2];
+    let nx = uy * vz - uz * vy;
+    let ny = uz * vx - ux * vz;
+    let nz = ux * vy - uy * vx;
+    const len = Math.hypot(nx, ny, nz) || 1;
+    nx /= len; ny /= len; nz /= len;
+    for (let k = 0; k < 9; k += 3) {
+      n[t + k] = nx;
+      n[t + k + 1] = ny;
+      n[t + k + 2] = nz;
+    }
+  }
+  return n;
 }
 
 /** Append a reverse-wound copy of every triangle so the mesh renders from both sides. */
