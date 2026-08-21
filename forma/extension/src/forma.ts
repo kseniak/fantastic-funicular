@@ -31,7 +31,7 @@ const buildingPaths = new Map<string, string>();
 
 export async function readSiteFromForma(): Promise<Site> {
   const boundaryPolygon = await readParcelBoundary();
-  const buildings = await readBuildings();
+  const buildings = await readBuildings(boundaryPolygon);
   return { parcelId: Forma.getProjectId(), planeZ: 0, boundaryPolygon, buildings };
 }
 
@@ -52,12 +52,33 @@ async function readParcelBoundary(): Promise<[number, number][]> {
   return boundary;
 }
 
-async function readBuildings(): Promise<Building[]> {
-  const paths = await Forma.geometry.getPathsByCategory({ category: "buildings" });
+/** Forma tags massing as "building" or "buildings" depending on how it was made,
+ *  so try both. If neither matches (imported/custom geometry), fall back to every
+ *  element whose geometry sits inside the site boundary. Terrain, the site limit,
+ *  and vegetation are always excluded. */
+async function collectMassingPaths(boundary: [number, number][]): Promise<string[]> {
+  const found = new Set<string>();
+  for (const category of ["building", "buildings"]) {
+    for (const path of await Forma.geometry.getPathsByCategory({ category })) found.add(path);
+  }
+  if (found.size === 0) {
+    for (const path of await Forma.geometry.getPathsInsidePolygons({ polygons: [boundary] })) found.add(path);
+  }
+
+  const excluded = new Set<string>();
+  for (const category of ["site_limit", "property_boundary", "terrain", "vegetation", "roads"]) {
+    for (const path of await Forma.geometry.getPathsByCategory({ category })) excluded.add(path);
+  }
+  return [...found].filter((path) => !excluded.has(path));
+}
+
+async function readBuildings(boundary: [number, number][]): Promise<Building[]> {
+  const paths = await collectMassingPaths(boundary);
   const buildings: Building[] = [];
   for (const path of paths) {
     const fp = await Forma.geometry.getFootprint({ path });
-    if (!fp || fp.coordinates.length < 3) continue;
+    // Only closed polygons are massing; skip line strings (site limit, roads).
+    if (!fp || fp.type !== "Polygon" || fp.coordinates.length < 3) continue;
     const { baseZ, height } = await zExtent(path);
     const id = shortId(path);
     buildingPaths.set(id, path);
