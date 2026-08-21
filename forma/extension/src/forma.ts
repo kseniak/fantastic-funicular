@@ -21,7 +21,7 @@ import { Forma } from "forma-embedded-view-sdk/auto";
 import { boundingBox } from "forma-compliance-mcp/dist/site.js";
 import type { Building, Site } from "forma-compliance-mcp/dist/site.js";
 import type { Edit } from "forma-compliance-mcp/dist/fixes.js";
-import { extrudeFloors, extrudeMesh } from "./mesh.js";
+import { extrudeFloors } from "./mesh.js";
 import { positionsToGlb } from "./glb.js";
 
 /** Metres per storey, used to turn a read height into a floor count. */
@@ -265,7 +265,8 @@ export async function drawCorrections(edits: readonly Edit[]): Promise<void> {
 }
 
 async function drawBuilding(b: Building): Promise<void> {
-  const position = extrudeMesh(b.footprint as [number, number][], b.baseZ, b.height);
+  const storey = b.floors > 0 ? b.height / b.floors : b.height;
+  const position = extrudeFloors(b.footprint as [number, number][], b.baseZ, storey, b.floors);
   const color = solidColor(position.length / 3, [80, 200, 120, 255]);
   const existing = correctionMeshes.get(b.id);
   if (existing) {
